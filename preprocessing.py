@@ -20,6 +20,7 @@ class PrepECG(object):
                       ]
         self.dist_r = 180 # 128 points to the left and right from R peak
 
+
     def ReadECG(self,num_record):
         '''
         Reading ECG record from 'Data' folder
@@ -72,11 +73,22 @@ class PrepECG(object):
 
     def InitSeg(self):
         SegDict = dict()
+        label_counter = dict()
         for label in ['N', 'AF', 'O']:
-            SegDict[label] = []
+            SegDict[label] = [[]]
+            label_counter[label] = 0
+        return SegDict, label_counter
+
+    def MakeRoomSegDict(self, SegDict, prev_label_counter, curr_label_counter):
+        for label in ['N', 'AF', 'O']:
+            if prev_label_counter[label] < curr_label_counter[label]:
+                SegDict[label].append([])
+            else:
+                pass
+
         return SegDict
 
-    def SegECG(self, ECG, Anno, SegDict):
+    def SegECG(self, ECG, Anno, SegDict, prev_label_counter):
         '''
         Given ECG and Annotaiton file,
         :param ECG: ECG record from ReadECG
@@ -89,6 +101,13 @@ class PrepECG(object):
 
         prev_r = 0
         init_beat = False
+        record_label_counter = dict()
+        curr_label_counter = dict( )
+        for label in ['N','AF','O']:
+            record_label_counter[label] = 0
+            curr_label_counter[label] = prev_label_counter[label]
+
+
         for r in R_list:
             if r > self.dist_r and r + self.dist_r < ECG_len: # if r is in the middle of the record
                 if init_beat == False:
@@ -102,22 +121,31 @@ class PrepECG(object):
                 if beat_label == 0:
                     continue
                 else:
-                    SegDict[beat_label].append(beat)
+                    record_label_counter[beat_label] += 1
+                    SegDict[beat_label][prev_label_counter[beat_label]]+=beat
                     prev_r = r
             else: # If r is at the very beginning stage or very end phase
                 continue
 
-        return SegDict
+        # del (prev_label_counter)
+        for label in ['N','AF','O']:
+            if record_label_counter[label] > 0:
+                curr_label_counter[label] += 1
+            else:
+                pass
+
+        return SegDict, curr_label_counter
 
     def Preprocessing(self):
-        SegDict = self.InitSeg()
+        SegDict, prev_label_counter = self.InitSeg()
         for num_record in self.MITBIH_idx:
             print(num_record)
             ECG = self.ReadECG(num_record)
-            Anno = self.Anno_Epi( prep.ReadAnno(num_record) )
-            SegDict = self.SegECG(ECG,Anno,SegDict)
+            Anno = self.Anno_Epi( self.ReadAnno(num_record) )
+            SegDict, curr_label_counter = self.SegECG(ECG,Anno,SegDict, prev_label_counter)
+            SegDict = self.MakeRoomSegDict(SegDict,prev_label_counter, curr_label_counter)
+            prev_label_counter = curr_label_counter
         return SegDict
-
 
     def Graph_ECG(self, ECG):
         f = plt.figure()
@@ -129,7 +157,7 @@ prep = PrepECG()
 SegDict = prep.Preprocessing()
 Label= ['N'] * len(SegDict['N']) + ['AF']*len(SegDict['AF']) + ['O']*len(SegDict['O'])
 Data = SegDict['N'] + SegDict['AF'] + SegDict['O']
-
+#
 pickle.dump(SegDict,open('SegECG.pkl','wb'))
 pickle.dump(Label,open('label.pkl','wb'))
 pickle.dump(Data,open('data.pkl','wb'))
