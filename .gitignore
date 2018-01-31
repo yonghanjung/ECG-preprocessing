@@ -1,3 +1,5 @@
 *.pkl
 Data
 *.zip
+.gitignore
+Discard

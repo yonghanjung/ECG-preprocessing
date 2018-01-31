@@ -19,6 +19,7 @@ class PrepECG(object):
                       234
                       ]
         self.dist_r = 180 # 128 points to the left and right from R peak
+        self.num_beat_limit = 30
 
 
     def ReadECG(self,num_record):
@@ -79,6 +80,7 @@ class PrepECG(object):
             label_counter[label] = 0
         return SegDict, label_counter
 
+
     def MakeRoomSegDict(self, SegDict, prev_label_counter, curr_label_counter):
         for label in ['N', 'AF', 'O']:
             if prev_label_counter[label] < curr_label_counter[label]:
@@ -107,7 +109,6 @@ class PrepECG(object):
             record_label_counter[label] = 0
             curr_label_counter[label] = prev_label_counter[label]
 
-
         for r in R_list:
             if r > self.dist_r and r + self.dist_r < ECG_len: # if r is in the middle of the record
                 if init_beat == False:
@@ -116,14 +117,20 @@ class PrepECG(object):
                 elif init_beat == True:
                     beat = list(ECG[range( prev_r+self.dist_r,
                                            r + self.dist_r)])
-                prev_r = r
+
                 beat_label = self.label_converter( list(Anno[Anno['Sample #'] == r]['Aux'])[0] )
                 if beat_label == 0:
+                    prev_r = r
                     continue
                 else:
-                    record_label_counter[beat_label] += 1
-                    SegDict[beat_label][prev_label_counter[beat_label]]+=beat
-                    prev_r = r
+                    if record_label_counter[beat_label] < self.num_beat_limit:
+                        SegDict[beat_label][prev_label_counter[beat_label]] += beat
+                        record_label_counter[beat_label] += 1
+                        prev_r = r
+                    else:
+                        prev_r = r
+                        continue
+
             else: # If r is at the very beginning stage or very end phase
                 continue
 
@@ -157,7 +164,19 @@ prep = PrepECG()
 SegDict = prep.Preprocessing()
 Label= ['N'] * len(SegDict['N']) + ['AF']*len(SegDict['AF']) + ['O']*len(SegDict['O'])
 Data = SegDict['N'] + SegDict['AF'] + SegDict['O']
-#
+
+inclusion_idx = []
+for idx in range(len(Data)):
+    if len(Data[idx]) == 0:
+        print(idx)
+    else:
+        inclusion_idx.append(idx)
+
+Data = list(np.array(Data)[inclusion_idx])
+Label = list(np.array(Label)[inclusion_idx])
+
 pickle.dump(SegDict,open('SegECG.pkl','wb'))
 pickle.dump(Label,open('label.pkl','wb'))
 pickle.dump(Data,open('data.pkl','wb'))
+
+
